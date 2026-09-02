@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/onidemon37/tasting-journals-app/compare/v0.1.0...v0.2.0) (2026-09-02)
+
+
+### Features
+
+* **release:** starting from scratch ([7148daa](https://github.com/onidemon37/tasting-journals-app/commit/7148daae41c80ec43ea42af532e4e52c75d9cad5))
+
+
+### Bug Fixes
+
+* **ci:** validate actual kustomize entry points ([7ebb784](https://github.com/onidemon37/tasting-journals-app/commit/7ebb78460100c999840d68902bca3845af59da89))
+
 ## 0.1.0 (2026-09-02)
 
 
