@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: tasting-journals
+  labels:
+    app.kubernetes.io/name: tasting-journals
+spec:
+  selector:
+    app.kubernetes.io/name: tasting-journals
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

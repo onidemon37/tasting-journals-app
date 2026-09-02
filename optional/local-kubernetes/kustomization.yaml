@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: tasting-journals-local
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - ../../deploy/base
+patches:
+  - path: app-patch.yaml
