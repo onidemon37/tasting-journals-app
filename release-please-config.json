@@ -3,7 +3,8 @@
   "include-component-in-tag": false,
   "packages": {
     ".": {
-      "package-name": "tasting-journals-app"
+      "package-name": "tasting-journals-app",
+      "release-as": "0.1.0"
     }
   }
 }
