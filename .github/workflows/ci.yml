@@ -60,8 +60,16 @@ jobs:
       - name: Validate deployment manifests
         shell: bash
         run: |
-          if [[ -d deploy ]]; then
-            kubectl kustomize deploy >/dev/null
+          if [[ -f deploy/base/kustomization.yaml ]]; then
+            kubectl kustomize deploy/base >/dev/null
           else
             echo 'Deployment manifests are not present yet; skipping Kustomize validation.'
+          fi
+      - name: Validate optional local Kubernetes manifests
+        shell: bash
+        run: |
+          if [[ -f optional/local-kubernetes/kustomization.yaml ]]; then
+            kubectl kustomize optional/local-kubernetes >/dev/null
+          else
+            echo 'Optional local Kubernetes manifests are not present; skipping validation.'
           fi
