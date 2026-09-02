@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tasting-journals
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          image: tasting-journals-app:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: APP_NAME
+              value: Sociedade 67
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
