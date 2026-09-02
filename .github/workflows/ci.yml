@@ -9,7 +9,27 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Lint application
+        shell: bash
+        run: |
+          if [[ -f package.json ]]; then
+            npm ci
+            npm run lint --if-present
+          elif [[ -f go.mod ]]; then
+            go vet ./...
+          elif [[ -f pyproject.toml || -f requirements.txt ]]; then
+            python3 -m compileall -q .
+          else
+            echo 'Application source is not present yet; skipping application lint.'
+          fi
+
   validate:
+    needs: lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
