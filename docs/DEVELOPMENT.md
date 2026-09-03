@@ -11,6 +11,14 @@ For application development:
 - `kubectl` for Kubernetes manifest validation
 - Minikube or Kind for local Kubernetes testing
 
+Install the pinned Go toolchain with:
+
+```bash
+make install-go
+```
+
+This uses `mise` when available, then Homebrew. If neither is installed, the Makefile keeps Go checks available through Docker.
+
 The host Go toolchain is optional when Docker is available. The Dockerfile can build and test the application using the Go builder image.
 
 ## Run with Docker Compose
@@ -120,6 +128,17 @@ docker run --rm \
   -w /src \
   golang:1.24-alpine \
   sh -c 'go test ./... && go vet ./... && go build ./cmd/server'
+```
+
+The equivalent Makefile commands are:
+
+```bash
+make lint
+make test
+make build
+make image-build
+make docker-test
+make k8s-validate
 ```
 
 Build the production image:
