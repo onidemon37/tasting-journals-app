@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,8 @@ import (
 	"html/template"
 	"io"
 	"log"
+	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -58,6 +61,7 @@ type App struct {
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	ctx := context.Background()
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
@@ -79,7 +83,7 @@ func main() {
 	}
 	app := &App{db: pool, templates: templates}
 	server := &http.Server{Addr: env("APP_ADDRESS", ":8080"), Handler: app.routes(), ReadHeaderTimeout: 5 * time.Second}
-	log.Printf("tasting journals listening on %s", server.Addr)
+	slog.Default().Info("server listening", "address", server.Addr)
 	log.Fatal(server.ListenAndServe())
 }
 
@@ -128,12 +132,73 @@ func (a *App) routes() http.Handler {
 	return logging(mux)
 }
 
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *loggingResponseWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *loggingResponseWriter) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(body)
+}
+
 func logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		next.ServeHTTP(w, r)
-		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start))
+		requestID := r.Header.Get("X-Request-ID")
+		if requestID == "" {
+			requestID = newRequestID()
+		}
+		response := &loggingResponseWriter{ResponseWriter: w}
+		response.Header().Set("X-Request-ID", requestID)
+		next.ServeHTTP(response, r.WithContext(context.WithValue(r.Context(), requestIDKey{}, requestID)))
+		status := response.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		attrs := []any{
+			"request_id", requestID,
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", status,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"peer_ip", peerIP(r.RemoteAddr),
+			"remote_addr", r.RemoteAddr,
+			"user_agent", r.UserAgent(),
+		}
+		if forwardedFor := r.Header.Get("X-Forwarded-For"); forwardedFor != "" {
+			attrs = append(attrs, "forwarded_for", forwardedFor)
+		}
+		if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+			attrs = append(attrs, "real_ip_header", realIP)
+		}
+		slog.Default().Info("http request", attrs...)
 	})
+}
+
+func peerIP(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return remoteAddr
+	}
+	return host
+}
+
+type requestIDKey struct{}
+
+func newRequestID() string {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return "unavailable"
+	}
+	return fmt.Sprintf("%x", value)
 }
 
 func (a *App) homePage(w http.ResponseWriter, r *http.Request) { a.render(w, "home.html", nil) }
