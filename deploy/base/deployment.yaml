@@ -30,7 +30,7 @@ spec:
               type: RuntimeDefault
       containers:
         - name: app
-          image: ghcr.io/onidemon37/tasting-journals-app:sha-placeholder
+          image: ghcr.io/onidemon37/tasting-journals-app:sha-5cbd12c
           imagePullPolicy: IfNotPresent
           env:
             - name: DATABASE_URL

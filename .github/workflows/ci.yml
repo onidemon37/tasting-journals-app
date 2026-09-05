@@ -14,19 +14,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - name: Run pre-commit checks
+        uses: pre-commit/action@v3.0.1
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
       - name: Lint application
         shell: bash
-        run: |
-          if [[ -f package.json ]]; then
-            npm ci
-            npm run lint --if-present
-          elif [[ -f go.mod ]]; then
-            go vet ./...
-          elif [[ -f pyproject.toml || -f requirements.txt ]]; then
-            python3 -m compileall -q .
-          else
-            echo 'Application source is not present yet; skipping application lint.'
-          fi
+        run: make lint
 
   validate:
     needs: lint
@@ -42,34 +42,10 @@ jobs:
             node --check "$file"
           done < <(find . -type f -name '*.js' -not -path './node_modules/*' -not -path './.git/*')
       - name: Validate application
-        shell: bash
-        run: |
-          if [[ -f package-lock.json ]]; then
-            npm ci
-            npm test --if-present
-            npm run lint --if-present
-            npm run build --if-present
-          elif [[ -f go.mod ]]; then
-            go test ./...
-            go vet ./...
-          elif [[ -f pyproject.toml || -f requirements.txt ]]; then
-            python3 -m compileall -q .
-          else
-            echo 'Application source is not present yet; repository validation is complete.'
-          fi
+        run: make test build
       - name: Validate deployment manifests
         shell: bash
-        run: |
-          if [[ -f deploy/base/kustomization.yaml ]]; then
-            kubectl kustomize deploy/base >/dev/null
-          else
-            echo 'Deployment manifests are not present yet; skipping Kustomize validation.'
-          fi
+        run: make k8s-render
       - name: Validate optional local Kubernetes manifests
         shell: bash
-        run: |
-          if [[ -f optional/local-kubernetes/kustomization.yaml ]]; then
-            kubectl kustomize optional/local-kubernetes >/dev/null
-          else
-            echo 'Optional local Kubernetes manifests are not present; skipping validation.'
-          fi
+        run: make k8s-validate

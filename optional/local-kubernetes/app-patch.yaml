@@ -7,7 +7,7 @@ spec:
     spec:
       containers:
         - name: app
-          image: tasting-journals-app:dev
+          image: ghcr.io/onidemon37/tasting-journals-app:sha-5cbd12c
           imagePullPolicy: IfNotPresent
           env:
             - name: APP_NAME
