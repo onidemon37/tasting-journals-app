@@ -1,0 +1,34 @@
+{
+  "title": "Logs (Loki)",
+  "uid": "loki-logs",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Container Logs",
+      "type": "logs",
+      "datasource": "Loki",
+      "gridPos": { "h": 20, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "expr": "{compose_project=\"tasting-journals-app\"}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
