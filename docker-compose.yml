@@ -17,10 +17,107 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
     environment:
       DATABASE_URL: postgres://tasting_journals:dev-only-password@postgres:5432/tasting_journals?sslmode=disable
       APP_NAME: Sociedade 67
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      OTEL_SERVICE_NAME: tasting-journals-app
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
     ports:
       - "8080:8080"
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:latest
+    environment:
+      DATA_SOURCE_NAME: "postgresql://tasting_journals:dev-only-password@postgres:5432/tasting_journals?sslmode=disable"
+    ports:
+      - "9187:9187"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # --- Observability (optional) ---
+  # The app emits Prometheus metrics (/metrics) and OpenTelemetry traces
+  # (via OTEL_EXPORTER_OTLP_ENDPOINT). These services stand up the
+  # collector/Prometheus/Tempo/Grafana pipeline to receive and visualize
+  # that data, and can also be exercised with the synthetic generators
+  # below.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    depends_on: [tempo, prometheus]
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  tempo:
+    # Pinned to 2.7.2: :latest points at Tempo's new backend-scheduler/
+    # backend-worker architecture, which no longer accepts the classic
+    # single-binary `compactor:` config used below.
+    image: grafana/tempo:2.7.2
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo.yaml
+    ports:
+      - "3200:3200"
+
+  loki:
+    image: grafana/loki:3.0.0
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./observability/loki-config.yaml:/etc/loki/loki-config.yaml
+    ports:
+      - "3100:3100"
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    command: ["-config.file=/etc/promtail/promtail-config.yaml"]
+    volumes:
+      - ./observability/promtail-config.yaml:/etc/promtail/promtail-config.yaml
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - ./observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - ./observability/dashboards/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml
+      - ./observability/dashboards/json:/etc/grafana/provisioning/dashboards/json
+    depends_on: [prometheus, tempo, loki]
+
+  # --- synthetic telemetry generators (optional) ---
+  # Not started by a plain `docker compose up`. Useful for exercising the
+  # collector/Prometheus/Tempo/Grafana pipeline before the app emits real
+  # telemetry: `docker compose --profile synthetic up`.
+  telemetrygen-traces:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+    command: ["traces", "--otlp-insecure", "--otlp-endpoint=otel-collector:4317", "--duration=600s", "--rate=5"]
+    restart: unless-stopped
+    depends_on: [otel-collector]
+    profiles: ["synthetic"]
+
+  telemetrygen-metrics:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+    command: ["metrics", "--otlp-insecure", "--otlp-endpoint=otel-collector:4317", "--duration=600s", "--rate=5"]
+    restart: unless-stopped
+    depends_on: [otel-collector]
+    profiles: ["synthetic"]
+
 volumes:
   postgres-data:

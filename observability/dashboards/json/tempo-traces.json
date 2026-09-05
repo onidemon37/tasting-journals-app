@@ -1,0 +1,27 @@
+{
+  "title": "Traces (Tempo)",
+  "uid": "tempo-traces",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Recent Traces",
+      "type": "traces",
+      "datasource": "Tempo",
+      "gridPos": { "h": 20, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "queryType": "traceqlSearch",
+          "filters": [],
+          "limit": 20,
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

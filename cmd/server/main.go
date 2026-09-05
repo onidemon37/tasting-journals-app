@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,8 @@ import (
 	"html/template"
 	"io"
 	"log"
+	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -17,6 +20,28 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+)
+
+var (
+	httpRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "app_http_requests_total",
+		Help: "Total number of HTTP requests handled, labeled by method, route, and status code.",
+	}, []string{"method", "route", "status"})
+
+	httpRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "app_http_request_duration_seconds",
+		Help:    "HTTP request duration in seconds, labeled by method and route.",
+		Buckets: prometheus.DefBuckets,
+	}, []string{"method", "route"})
+
+	tracer = otel.Tracer("github.com/onidemon37/tasting-journals-app")
 )
 
 //go:embed migrations/*.sql
@@ -58,7 +83,16 @@ type App struct {
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	ctx := context.Background()
+
+	shutdownTracing, err := setupTracing(ctx)
+	if err != nil {
+		slog.Default().Error("tracing setup failed, continuing without it", "error", err)
+	} else {
+		defer shutdownTracing(ctx)
+	}
+
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		log.Fatal("DATABASE_URL is required")
@@ -79,7 +113,7 @@ func main() {
 	}
 	app := &App{db: pool, templates: templates}
 	server := &http.Server{Addr: env("APP_ADDRESS", ":8080"), Handler: app.routes(), ReadHeaderTimeout: 5 * time.Second}
-	log.Printf("tasting journals listening on %s", server.Addr)
+	slog.Default().Info("server listening", "address", server.Addr)
 	log.Fatal(server.ListenAndServe())
 }
 
@@ -125,15 +159,100 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /tastings/{id}/delete", a.deleteTastingFromForm)
 	mux.HandleFunc("GET /tastings/{id}", a.tastingPage)
 	mux.HandleFunc("GET /", a.homePage)
+	mux.Handle("GET /metrics", promhttp.Handler())
 	return logging(mux)
 }
 
-func logging(next http.Handler) http.Handler {
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *loggingResponseWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *loggingResponseWriter) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(body)
+}
+
+func logging(mux *http.ServeMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		next.ServeHTTP(w, r)
-		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start))
+		requestID := r.Header.Get("X-Request-ID")
+		if requestID == "" {
+			requestID = newRequestID()
+		}
+		_, route := mux.Handler(r)
+		if route == "" {
+			route = "unmatched"
+		}
+
+		ctx, span := tracer.Start(r.Context(), route, trace.WithSpanKind(trace.SpanKindServer))
+		span.SetAttributes(
+			attribute.String("http.method", r.Method),
+			attribute.String("http.route", route),
+			attribute.String("http.target", r.URL.Path),
+		)
+		defer span.End()
+
+		response := &loggingResponseWriter{ResponseWriter: w}
+		response.Header().Set("X-Request-ID", requestID)
+		mux.ServeHTTP(response, r.WithContext(context.WithValue(ctx, requestIDKey{}, requestID)))
+		status := response.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		span.SetAttributes(attribute.Int("http.status_code", status))
+		if status >= 500 {
+			span.SetStatus(codes.Error, http.StatusText(status))
+		}
+
+		httpRequestsTotal.WithLabelValues(r.Method, route, strconv.Itoa(status)).Inc()
+		httpRequestDuration.WithLabelValues(r.Method, route).Observe(time.Since(start).Seconds())
+		attrs := []any{
+			"request_id", requestID,
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", status,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"peer_ip", peerIP(r.RemoteAddr),
+			"remote_addr", r.RemoteAddr,
+			"user_agent", r.UserAgent(),
+		}
+		if spanCtx := span.SpanContext(); spanCtx.IsValid() {
+			attrs = append(attrs, "trace_id", spanCtx.TraceID().String(), "span_id", spanCtx.SpanID().String())
+		}
+		if forwardedFor := r.Header.Get("X-Forwarded-For"); forwardedFor != "" {
+			attrs = append(attrs, "forwarded_for", forwardedFor)
+		}
+		if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+			attrs = append(attrs, "real_ip_header", realIP)
+		}
+		slog.Default().Info("http request", attrs...)
 	})
+}
+
+func peerIP(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return remoteAddr
+	}
+	return host
+}
+
+type requestIDKey struct{}
+
+func newRequestID() string {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return "unavailable"
+	}
+	return fmt.Sprintf("%x", value)
 }
 
 func (a *App) homePage(w http.ResponseWriter, r *http.Request) { a.render(w, "home.html", nil) }
