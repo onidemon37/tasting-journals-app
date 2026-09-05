@@ -3,3 +3,4 @@ Reusable tasting journal platform for whisky, cigars, and future club experience
 
 See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for curl-based health, API, database, and request-log troubleshooting.
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for local Docker, API, PostgreSQL, Kubernetes, CI, and release instructions.
+See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) for viewing metrics/logs/traces in Grafana, building dashboards, and observability troubleshooting.
