@@ -12,13 +12,12 @@ GO_ARCHIVE ?= go$(GO_VERSION).linux-amd64.tar.gz
 COMPOSE := docker compose
 K8S_NAMESPACE ?= tasting-journals-local
 
-.PHONY: help install-go docs fmt fmt-check lint test vet build image-build image-run docker-test k8s-render k8s-validate k8s-load k8s-apply k8s-status clean
+.PHONY: help install-go fmt fmt-check lint test vet build image-build image-run docker-test k8s-render k8s-validate k8s-load k8s-apply k8s-status clean
 
 help:
 	@printf '%s\n' \
 		'Available targets:' \
 		'  make install-go   Install the pinned Go toolchain with mise or Homebrew' \
-		'  make docs          Generate docs/STRUCTURE.md' \
 		'  make fmt           Format Go source' \
 		'  make fmt-check     Check Go formatting' \
 		'  make lint          Run Go vet and formatting checks' \
@@ -60,9 +59,6 @@ install-go:
 		printf '%s\n' 'Run: export PATH="$(GO_INSTALL_DIR)/go/bin:$$PATH"'; \
 		printf '%s\n' 'Then run: make lint test build'; \
 	fi
-
-docs:
-	@python3 scripts/generate-structure.py
 
 fmt:
 	@if command -v go >/dev/null 2>&1; then \
